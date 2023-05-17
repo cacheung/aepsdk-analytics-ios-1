@@ -65,6 +65,61 @@ class AnalyticsTrackTestBase : AnalyticsFunctionalTestBase {
                   vars: expectedVars,
                   contextData: expectedContextData)
     }
+    
+    func trackStateEmptyTester() {
+        let lifecycleSharedState: [String: Any] = [
+            AnalyticsTestConstants.Lifecycle.EventDataKeys.LIFECYCLE_CONTEXT_DATA : [
+                AnalyticsTestConstants.Lifecycle.EventDataKeys.APP_ID : "mockAppName",
+            ]
+        ]
+
+        simulateLifecycleState(data: lifecycleSharedState)
+        
+        let trackData: [String: Any] = [
+            CoreConstants.Keys.STATE : CoreConstants.Keys.STATE.isEmpty,
+            CoreConstants.Keys.CONTEXT_DATA : [
+                "k1": "v1",
+                "k2": "v2"
+            ]
+        ]
+        let trackEvent = Event(name: "Generic track event", type: EventType.genericTrack, source: EventSource.requestContent, data: trackData)
+        mockRuntime.simulateComingEvent(event: trackEvent)
+
+        waitForProcessing()
+        let expectedVars: [String: String]
+        if runningForApp {
+            expectedVars = [
+                "ce": "UTF-8",
+                "cp": "foreground",
+                "pageName" : "mockAppName",
+                "mid" : "mid",
+                "aamb" : "blob",
+                "aamlh" : "lochint",
+                "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
+            ]
+        } else {
+            expectedVars = [
+                "ce": "UTF-8",
+                "pageName" : "mockAppName",
+                "mid" : "mid",
+                "aamb" : "blob",
+                "aamlh" : "lochint",
+                "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
+            ]
+        }
+
+        let expectedContextData = [
+            "k1" : "v1",
+            "k2" : "v2",
+            "a.AppID" : "mockAppName"
+        ]
+
+        XCTAssertEqual(mockNetworkService?.calledNetworkRequests.count, 1)
+        verifyHit(request: mockNetworkService?.calledNetworkRequests[0],
+                  host: "https://test.com/b/ss/rsid/0/",
+                  vars: expectedVars,
+                  contextData: expectedContextData)
+    }
 
     func trackActionTester() {
         let trackData: [String: Any] = [
@@ -114,6 +169,51 @@ class AnalyticsTrackTestBase : AnalyticsFunctionalTestBase {
                   vars: expectedVars,
                   contextData: expectedContextData)
     }
+    
+    func trackActionEmptyTester() {
+                      
+            let trackData: [String: Any] = [
+                CoreConstants.Keys.ACTION : CoreConstants.Keys.ACTION.isEmpty,
+                CoreConstants.Keys.CONTEXT_DATA : [
+                    "k1": "v1",
+                    "k2": "v2"
+                ]
+            ]
+            let trackEvent = Event(name: "Generic track event", type: EventType.genericTrack, source: EventSource.requestContent, data: trackData)
+            mockRuntime.simulateComingEvent(event: trackEvent)
+
+            waitForProcessing()
+            let expectedVars: [String: String]
+            if runningForApp {
+                expectedVars = [
+                    "ce": "UTF-8",
+                    "cp": "foreground",
+                    "mid" : "mid",
+                    "aamb" : "blob",
+                    "aamlh" : "lochint",
+                    "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
+                ]
+            } else {
+                expectedVars = [
+                    "ce": "UTF-8",
+                    "mid" : "mid",
+                    "aamb" : "blob",
+                    "aamlh" : "lochint",
+                    "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
+                ]
+            }
+
+            let expectedContextData = [
+                "k1" : "v1",
+                "k2" : "v2",
+            ]
+
+            XCTAssertEqual(mockNetworkService?.calledNetworkRequests.count, 1)
+            verifyHit(request: mockNetworkService?.calledNetworkRequests[0],
+                      host: "https://test.com/b/ss/rsid/0/",
+                      vars: expectedVars,
+                      contextData: expectedContextData)
+        }
 
 
     func trackInternalActionTester() {

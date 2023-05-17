@@ -27,12 +27,19 @@ class AnalyticsTrackTests : AnalyticsTrackTestBase {
     func testTrackState() {
         trackStateTester()
     }
+    
+    func testTrackEmptyState() {
+        trackStateEmptyTester()
+    }
 
     func testTrackAction() {
         trackActionTester()
     }
-
-
+    
+    func testTrackEmptyAction() {
+        trackActionEmptyTester()
+    }
+    
     func testTrackInternalAction() {
         trackInternalActionTester()
     }
