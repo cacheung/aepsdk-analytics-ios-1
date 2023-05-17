@@ -171,50 +171,61 @@ class AnalyticsTrackTestBase : AnalyticsFunctionalTestBase {
     }
     
     func trackActionEmptyTester() {
+        
+        let lifecycleSharedState: [String: Any] = [
+            AnalyticsTestConstants.Lifecycle.EventDataKeys.LIFECYCLE_CONTEXT_DATA : [
+                AnalyticsTestConstants.Lifecycle.EventDataKeys.APP_ID : "mockAppName",
+            ]
+        ]
+
+        simulateLifecycleState(data: lifecycleSharedState)
                       
-            let trackData: [String: Any] = [
-                CoreConstants.Keys.ACTION : CoreConstants.Keys.ACTION.isEmpty,
-                CoreConstants.Keys.CONTEXT_DATA : [
-                    "k1": "v1",
-                    "k2": "v2"
-                ]
+        let trackData: [String: Any] = [
+            CoreConstants.Keys.ACTION : CoreConstants.Keys.ACTION.isEmpty,
+            CoreConstants.Keys.CONTEXT_DATA : [
+                "k1": "v1",
+                "k2": "v2"
             ]
-            let trackEvent = Event(name: "Generic track event", type: EventType.genericTrack, source: EventSource.requestContent, data: trackData)
-            mockRuntime.simulateComingEvent(event: trackEvent)
+        ]
+        let trackEvent = Event(name: "Generic track event", type: EventType.genericTrack, source: EventSource.requestContent, data: trackData)
+        mockRuntime.simulateComingEvent(event: trackEvent)
 
-            waitForProcessing()
-            let expectedVars: [String: String]
-            if runningForApp {
-                expectedVars = [
-                    "ce": "UTF-8",
-                    "cp": "foreground",
-                    "mid" : "mid",
-                    "aamb" : "blob",
-                    "aamlh" : "lochint",
-                    "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
-                ]
-            } else {
-                expectedVars = [
-                    "ce": "UTF-8",
-                    "mid" : "mid",
-                    "aamb" : "blob",
-                    "aamlh" : "lochint",
-                    "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
-                ]
-            }
-
-            let expectedContextData = [
-                "k1" : "v1",
-                "k2" : "v2",
+        waitForProcessing()
+        let expectedVars: [String: String]
+        if runningForApp {
+            expectedVars = [
+                //no pev2 and pe
+                "ce": "UTF-8",
+                "cp": "foreground",
+                "pageName" : "mockAppName",
+                "mid" : "mid",
+                "aamb" : "blob",
+                "aamlh" : "lochint",
+                "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
             ]
-
-            XCTAssertEqual(mockNetworkService?.calledNetworkRequests.count, 1)
-            verifyHit(request: mockNetworkService?.calledNetworkRequests[0],
-                      host: "https://test.com/b/ss/rsid/0/",
-                      vars: expectedVars,
-                      contextData: expectedContextData)
+        } else {
+            expectedVars = [
+                "ce": "UTF-8",
+                "mid" : "mid",
+                "pageName" : "mockAppName",
+                "aamb" : "blob",
+                "aamlh" : "lochint",
+                "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
+            ]
         }
 
+        let expectedContextData = [
+            "k1" : "v1",
+            "k2" : "v2",
+            "a.AppID" : "mockAppName"
+        ]
+
+        XCTAssertEqual(mockNetworkService?.calledNetworkRequests.count, 1)
+        verifyHit(request: mockNetworkService?.calledNetworkRequests[0],
+                  host: "https://test.com/b/ss/rsid/0/",
+                  vars: expectedVars,
+                  contextData: expectedContextData)
+    }
 
     func trackInternalActionTester() {
         let trackData: [String: Any] = [
