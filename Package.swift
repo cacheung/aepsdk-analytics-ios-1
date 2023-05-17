@@ -15,7 +15,7 @@ import PackageDescription
 
 let package = Package(
     name: "AEPAnalytics",
-    platforms: [.iOS(.v10)],
+    platforms: [.iOS(.v10), .tvOS(.v10)],
     products: [
         .library(name: "AEPAnalytics", targets: ["AEPAnalytics"]),
     ],
@@ -25,6 +25,6 @@ let package = Package(
     targets: [
         .target(name: "AEPAnalytics",
                 dependencies: ["AEPCore", .product(name: "AEPServices", package: "AEPCore")],
-                path: "AEPAnalytics/Sources"),
+                path: "AEPAnalytics/Sources")
     ]
 )

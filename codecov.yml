@@ -22,8 +22,11 @@ coverage:
     - "./AEPAnalytics/Mocks/**/*"
     - "./AEPAnalytics/Tests/**/*"
     - "./AEPAnalytics/Tests/.*"
-    - "./AnalyticsSampleApp/.*"
+    - "./Documentation"
+    - "./Script"
     - "./build"
+    - "./TestApp"
+    - "./TestAppExt"
 
 parsers:
   gcov:

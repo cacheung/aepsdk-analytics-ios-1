@@ -15,9 +15,9 @@ import AEPServices
 @testable import AEPAnalytics
 @testable import AEPCore
 
-
+@available(tvOSApplicationExtension, unavailable)
 class AnalyticsFunctionalTestBase : XCTestCase {
-    var analytics:Analytics!
+    var analytics:AnalyticsBase!
     var mockRuntime: TestableExtensionRuntime!
     
     var mockDataStore: MockDataStore {
@@ -28,27 +28,28 @@ class AnalyticsFunctionalTestBase : XCTestCase {
         return ServiceProvider.shared.networkService as? MockNetworking
     }
             
-    func setupBase(disableIdRequest: Bool = true) {
+    // If you are testing Analytics for App pass true, if testing for App Extension pass false
+    func setupBase(forApp: Bool) {
         UserDefaults.clear()        
         
         ServiceProvider.shared.namedKeyValueService = MockDataStore()
         ServiceProvider.shared.networkService = MockNetworking()
         AnalyticsDatabase.dataQueueService = MockDataQueueService()
-        
-        if (disableIdRequest) {
-            let dataStore = NamedCollectionDataStore(name: AnalyticsTestConstants.DATASTORE_NAME)
-            dataStore.set(key: AnalyticsTestConstants.DataStoreKeys.IGNORE_AID, value: true)
-        }
-        
+                        
         // Setup default network response.
         mockNetworkService?.expectedResponse = HttpConnection(data: nil, response: HTTPURLResponse(url: URL(string: "test.com")!, statusCode: 200, httpVersion: nil, headerFields: nil), error: nil)
         
-        resetExtension()
+        resetExtension(forApp: forApp)
     }
     
-    func resetExtension() {        
+    // If you are testing Analytics for App pass true, if testing for App Extension pass false
+    func resetExtension(forApp: Bool) {
         mockRuntime = TestableExtensionRuntime()
-        analytics = Analytics(runtime: mockRuntime)
+        if forApp {
+            analytics = Analytics(runtime: mockRuntime)
+        } else {
+            analytics = AnalyticsAppExtension(runtime: mockRuntime)
+        }
         analytics.onRegistered()
     }
     
@@ -117,14 +118,14 @@ class AnalyticsFunctionalTestBase : XCTestCase {
             return
         }
         
-        let actualVars = AnalyticsRequestHelper.getQueryParams(source: request.connectPayload)
+        let actualVars = AnalyticsRequestHelper.getQueryParams(source: request.payloadAsString())
         var expectedVars = expectedVars ?? [:]
         // These vars are appended to all requests
         expectedVars["ndh"] = "1"
         expectedVars[AnalyticsConstants.Request.FORMATTED_TIMESTAMP_KEY] = TimeZone.current.getOffsetFromGmtInMinutes()
         XCTAssertTrue(NSDictionary(dictionary: actualVars).isEqual(to: expectedVars))
 
-        let actualContextData = AnalyticsRequestHelper.getContextData(source: request.connectPayload)
+        let actualContextData = AnalyticsRequestHelper.getContextData(source: request.payloadAsString())
         let expectedContextData = expectedContextData ?? [:]
         XCTAssertTrue(NSDictionary(dictionary: actualContextData).isEqual(to: expectedContextData))
 
@@ -136,13 +137,7 @@ class AnalyticsFunctionalTestBase : XCTestCase {
         if let lastSharedState = mockRuntime.createdSharedStates.last {
             let actualAid = lastSharedState?[AnalyticsTestConstants.DataStoreKeys.AID] as? String ?? ""
             let actualVid = lastSharedState?[AnalyticsTestConstants.DataStoreKeys.VID] as? String ?? ""
-            // For locally generated AID, we just check if aid value is of correct length
-            if (aid == "*") {
-                XCTAssertEqual(actualAid.count, 33)
-            } else {
-                XCTAssertEqual(actualAid, aid ?? "")
-            }
-            
+            XCTAssertEqual(actualAid, aid ?? "")
             XCTAssertEqual(actualVid, vid ?? "")
         }
         
@@ -155,12 +150,7 @@ class AnalyticsFunctionalTestBase : XCTestCase {
                 XCTAssertEqual(lastEvent.source, EventSource.responseIdentity)
                 let actualAid = lastEvent.data?[AnalyticsTestConstants.DataStoreKeys.AID] as? String ?? ""
                 let actualVid = lastEvent.data?[AnalyticsTestConstants.DataStoreKeys.VID] as? String ?? ""
-                // For locally generated AID, we just check if aid value is of correct length
-                if (aid == "*") {
-                    XCTAssertEqual(actualAid.count, 33)
-                } else {
-                    XCTAssertEqual(actualAid, aid ?? "")
-                }
+                XCTAssertEqual(actualAid, aid ?? "")
                 XCTAssertEqual(actualVid, vid ?? "")
             }
         }

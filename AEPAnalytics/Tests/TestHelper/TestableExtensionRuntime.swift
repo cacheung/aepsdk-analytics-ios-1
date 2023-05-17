@@ -16,6 +16,8 @@ import Foundation
 
 
 class TestableExtensionRuntime: ExtensionRuntime {
+
+
     var listeners: [String: EventListener] = [:]
     var dispatchedEvents: [Event] = []
     var createdSharedStates: [[String: Any]?] = []
@@ -24,6 +26,8 @@ class TestableExtensionRuntime: ExtensionRuntime {
     var otherXDMSharedStates: [String: SharedStateResult] = [:]
 
     let dispatchQueue = DispatchQueue(label: "")
+
+    public func getHistoricalEvents(_ requests: [EventHistoryRequest], enforceOrder: Bool, handler: @escaping ([EventHistoryResult]) -> Void) {}
 
     func getListener(type: String, source: String) -> EventListener? {
         return listeners["\(type)-\(source)"]
@@ -59,6 +63,10 @@ class TestableExtensionRuntime: ExtensionRuntime {
     }
 
     func getSharedState(extensionName: String, event: Event?, barrier: Bool) -> SharedStateResult? {
+        getSharedState(extensionName: extensionName, event: event, barrier: barrier, resolution: .any)
+    }
+
+    func getSharedState(extensionName: String, event: Event?, barrier: Bool, resolution: SharedStateResolution) -> SharedStateResult? {
         dispatchQueue.sync {
             let state = self.otherSharedStates["\(extensionName)-\(String(describing: event?.id))"] ?? nil
             if state == nil && event != nil {
@@ -66,7 +74,9 @@ class TestableExtensionRuntime: ExtensionRuntime {
             }
             return state
         }
+
     }
+
 
     public func createXDMSharedState(data: [String : Any], event: Event?) {
         createdXdmSharedStates += [data]
@@ -79,6 +89,10 @@ class TestableExtensionRuntime: ExtensionRuntime {
     }
 
     public func getXDMSharedState(extensionName: String, event: Event?) -> SharedStateResult? {
+        return getXDMSharedState(extensionName: extensionName, event: event, barrier: false, resolution: .any)
+    }
+
+    func getXDMSharedState(extensionName: String, event: Event?, barrier: Bool, resolution: SharedStateResolution) -> SharedStateResult? {
         return otherXDMSharedStates["\(extensionName)-\(String(describing: event?.id))"] ?? nil
     }
 

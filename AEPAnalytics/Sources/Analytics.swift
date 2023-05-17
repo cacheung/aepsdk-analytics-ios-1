@@ -14,9 +14,34 @@ import AEPCore
 import AEPServices
 import Foundation
 
-/// Analytics extension for the Adobe Experience Platform SDK
+///
+/// Analytics extension for the Adobe Experience Platform SDK to be used in iOS Apps.
+/// This has full support for all App functionality.
+/// Any functionality which is unavailable in App Extensions must be added / overriden in this class.
+///
 @objc(AEPMobileAnalytics)
-public class Analytics: NSObject, Extension {
+@available(iOSApplicationExtension, unavailable)
+@available(tvOSApplicationExtension, unavailable)
+public class Analytics: AnalyticsBase {
+
+    override func getApplicationStateVar() -> String? {
+        return (AnalyticsHelper.getApplicationState() == .background) ? AnalyticsConstants.APP_STATE_BACKGROUND : AnalyticsConstants.APP_STATE_FOREGROUND
+    }
+
+}
+
+///
+/// Analytics extension for the Adobe Experience Platform SDK to be used in App Extensions (e.g: Action Extension).
+/// Any functionality specific to App Extension support should be added to this class
+///
+@objc(AEPMobileAnalyticsAppExtension)
+public class AnalyticsAppExtension: AnalyticsBase {}
+
+///
+/// Analytics extension for the Adobe Experience Platform SDK base class which holds all base functionality.
+/// Base functionality in this case means all functionality which can be used in both Apps and App Extensions.
+/// 
+public class AnalyticsBase: NSObject, Extension {
     private let LOG_TAG = "Analytics"
 
     public let runtime: ExtensionRuntime
@@ -28,6 +53,7 @@ public class Analytics: NSObject, Extension {
     private let dataStore = NamedCollectionDataStore(name: AnalyticsConstants.DATASTORE_NAME)
     private var analyticsTimer: AnalyticsTimer
     private var analyticsDatabase: AnalyticsDatabase?
+
     private var analyticsProperties: AnalyticsProperties
     private var analyticsState: AnalyticsState
 
@@ -88,6 +114,7 @@ public class Analytics: NSObject, Extension {
         registerListener(type: EventType.lifecycle, source: EventSource.responseContent, listener: handleIncomingEvent)
         registerListener(type: EventType.genericLifecycle, source: EventSource.requestContent, listener: handleIncomingEvent)
         registerListener(type: EventType.hub, source: EventSource.sharedState, listener: handleIncomingEvent)
+        registerListener(type: EventType.genericIdentity, source: EventSource.requestReset, listener: handleIncomingEvent)
     }
 
     /// Invoked when the Analytics extension has been unregistered by the `EventHub`, currently a no-op.
@@ -138,6 +165,10 @@ public class Analytics: NSObject, Extension {
                 } else if event.source == EventSource.requestContent {
                     self.handleAnalyticsRequestContentEvent(event)
                 }
+            case EventType.genericIdentity:
+                if event.source == EventSource.requestReset {
+                    self.handleResetIdentitiesEvent(event)
+                }
             default:
                 break
             }
@@ -173,7 +204,7 @@ public class Analytics: NSObject, Extension {
     }
 
     /// Handle the following events
-    ///`EventType.genericTrack` and `EventSource.requestContent`
+    /// `EventType.genericTrack` and `EventSource.requestContent`
     ///  - Parameter event: the `Event` to be processed
     private func handleGenericTrackEvent(_ event: Event) {
         guard event.type == EventType.genericTrack && event.source == EventSource.requestContent else {
@@ -186,9 +217,9 @@ public class Analytics: NSObject, Extension {
     }
 
     /// Handles track request from following events
-    ///`EventType.genericTrack` and `EventSource.requestContent`
-    ///`EventType.rulesEngine` and `EventSource.responseContent`
-    ///`EventType.analytics` and `EventSource.requestContent`
+    /// `EventType.genericTrack` and `EventSource.requestContent`
+    /// `EventType.rulesEngine` and `EventSource.responseContent`
+    /// `EventType.analytics` and `EventSource.requestContent`
     ///  - Parameter event: the `Event` to be processed
     ///  - Parameter eventData: the track state/action data.
     private func handleTrackRequest(event: Event, eventData: [String: Any]?) {
@@ -204,10 +235,10 @@ public class Analytics: NSObject, Extension {
     }
 
     /// Handle the following events
-    ///`EventType.configuration` and `EventSource.responseContent`
+    /// `EventType.configuration` and `EventSource.responseContent`
     ///  - Parameter event: the `Event` to be processed
     private func handleConfigurationResponseEvent(_ event: Event) {
-        updateAnalyticsState(forEvent: event, dependencies: analyticsHardDependencies)
+        updateAnalyticsState(forEvent: event, dependencies: analyticsHardDependencies + analyticsSoftDependencies)
 
         if analyticsState.privacyStatus == .optedOut {
             handleOptOut(event: event)
@@ -218,7 +249,7 @@ public class Analytics: NSObject, Extension {
         if !sdkBootUpCompleted {
             Log.trace(label: LOG_TAG, "handleConfigurationResponseEvent - Publish analytics shared state on bootup.")
             sdkBootUpCompleted = true
-            retrieveAnalyticsId(event: event)
+            publishAnalyticsId(event: event)
         }
     }
 
@@ -276,14 +307,16 @@ public class Analytics: NSObject, Extension {
     /// `EventType.analytics` and `EventSource.requestIdentity`
     /// - Parameter event: The `Event` to be processed.
     private func handleAnalyticsRequestIdentityEvent(_ event: Event) {
-        if let eventData = event.data, !eventData.isEmpty {
-            if let vid = eventData[AnalyticsConstants.EventDataKeys.VISITOR_IDENTIFIER] as? String, !vid.isEmpty {
-                // set VID request
-                updateVisitorIdentifier(event: event, vid: vid)
+        if let vid = event.data?[AnalyticsConstants.EventDataKeys.VISITOR_IDENTIFIER] as? String {
+            if analyticsState.privacyStatus != .optedOut {
+                // Persist the visitor identifier
+                analyticsProperties.setVisitorIdentifier(vid: vid)
+            } else {
+                Log.debug(label: LOG_TAG, "handleAnalyticsRequestIdentityEvent - Privacy is opted out, ignoring the update visitor identifier request.")
             }
-        } else { // get AID/VID request
-            retrieveAnalyticsId(event: event)
         }
+
+        publishAnalyticsId(event: event)
     }
 
     /// Handles the following events
@@ -310,86 +343,25 @@ public class Analytics: NSObject, Extension {
         }
     }
 
-    /// Stores the passed in visitor identifier in the analytics datastore via the `AnalyticsProperties`.
-    /// - Parameters:
-    ///     - event: The `Event` which triggered the visitor identifier update.
-    ///     - vid: The visitor identifier that was set.
-    private func updateVisitorIdentifier(event: Event, vid: String) {
-        if analyticsState.privacyStatus == .optedOut {
-            Log.debug(label: LOG_TAG, "updateVisitorIdentifier - Privacy is opted out, ignoring the update visitor identifier request.")
-            return
-        }
-
-        // persist the visitor identifier
-        analyticsProperties.setVisitorIdentifier(vid: vid)
-
-        // create a new analytics shared state and dispatch response for any extensions listening for AID/VID change
-        dispatchAnalyticsIdentityResponse(event: event)
+    /// Processes Reset identities event
+    /// - Parameter:
+    ///   - event: The Reset identities event
+    private func handleResetIdentitiesEvent(_ event: Event) {
+        Log.debug(label: LOG_TAG, "\(#function) - Resetting all identifiers.")
+        analyticsDatabase?.reset()
+        analyticsState.resetIdentities()
+        analyticsProperties.reset()
+        analyticsState.lastResetIdentitiesTimestamp = event.timestamp.timeIntervalSince1970
+        createSharedState(data: getSharedState(), event: event)
     }
 
-    /// Sends an analytics id request and processes the response from the server if there
-    /// is no currently stored AID. If an AID is already present in AnalyticsProperties,
-    /// the stored AID is dispatched and no network request is made.
+    /// Dispatches event of type `EventType.analytics` and source `EventSource.responseContent` event with persisted ids and also updates analytics shared state.
     /// - Parameters:
-    ///     - event: The `Event` which triggered the sending of the analytics id request.
-    private func retrieveAnalyticsId(event: Event) {
-        // check if analytics state contains an RSID and host OR if privacy opt-out. if so, update shared state with empty id.
-        if !analyticsState.isAnalyticsConfigured() || analyticsState.privacyStatus == .optedOut {
-            Log.debug(label: LOG_TAG, "sendAnalyticsIdRequest - Analytics is not configured or privacy is opted out, the analytics identifier request will not be sent.")
-            analyticsProperties.setAnalyticsIdentifier(aid: nil)
-            analyticsProperties.setVisitorIdentifier(vid: nil)
-            // create nil shared state  and dispatch this data in a response event for any extensions listening for AID/VID change
-            dispatchAnalyticsIdentityResponse(event: event)
-            return
-        }
-
-        // two conditions where we need to retrieve aid
-        // 1. no saved AID & no marketing cloud org id, we need to get one from visitor ID service  (otherwise we should be using ECID from AAM)
-        // 2. isVisitorIdServiceEnabled is false and ignoreAidStatus is true
-        let ignoreAidStatus = analyticsProperties.getIgnoreAidStatus()
-        var aid = analyticsProperties.getAnalyticsIdentifier()
-        if (!ignoreAidStatus && aid == nil)
-            || (ignoreAidStatus && !analyticsState.isVisitorIdServiceEnabled()) {
-            // if privacy is unknown, don't initiate network call with AID
-            // return current stored AID if have one, otherwise generate one
-            if analyticsState.privacyStatus == .unknown {
-                if aid == nil {
-                    aid = generateAID()
-                    analyticsProperties.setAnalyticsIdentifier(aid: aid)
-                }
-
-                dispatchAnalyticsIdentityResponse(event: event)
-                return
-            }
-
-            guard let url = URL.getAnalyticsIdRequestURL(state: analyticsState) else {
-                Log.warning(label: self.LOG_TAG, "sendAnalyticsIdRequest - Failed to build the Analytics ID Request URL.")
-                return
-            }
-
-            Log.debug(label: LOG_TAG, "sendAnalyticsIdRequest - Sending Analytics ID call (\(url)).")
-            ServiceProvider.shared.networkService.connectAsync(networkRequest: buildAnalyticsIdentityRequest(url: url)) {[weak self] (connection) in
-                if connection.response == nil {
-                    Log.debug(label: "Analytics", "sendAnalyticsIdRequest - Unable to read response for AID request, response is nil.")
-                } else if connection.responseCode != 200 {
-                    Log.debug(label: "Analytics", "sendAnalyticsIdRequest - Unable to read response for AID request. response code = \(String(describing: connection.responseCode)).")
-                } else {
-                    // Execute this on dispatch queue as it mutates analytics property.
-                    self?.dispatchQueue.async {
-                        guard let self = self else { return }
-                        var aid: String = self.parseIdentifier(response: connection.data)
-                        if aid.count != AnalyticsConstants.AID_LENGTH {
-                            aid = self.analyticsState.isVisitorIdServiceEnabled() ? "" : self.generateAID()
-                        }
-                        self.analyticsProperties.setAnalyticsIdentifier(aid: aid)
-                        self.dispatchAnalyticsIdentityResponse(event: event)
-                    }
-
-                }
-            }
-        } else {
-            dispatchAnalyticsIdentityResponse(event: event)
-        }
+    ///     - event: The `Event` to publish shared state.
+    private func publishAnalyticsId(event: Event) {
+        let data = getSharedState()
+        createSharedState(data: data, event: event)
+        dispatchAnalyticsIdentityResponse(event: event, data: data)
     }
 
     /// Get the data for the analytics extension to be shared with other extensions.
@@ -408,10 +380,9 @@ public class Analytics: NSObject, Extension {
     /// Creates a new analytics shared state then dispatches an analytics response identity event.
     /// - Parameters:
     ///   - event: the event which triggered the analytics identity request.
-    private func dispatchAnalyticsIdentityResponse(event: Event) {
-        let sharedState = getSharedState()
-        createSharedState(data: sharedState, event: event)
-        let responseIdentityEvent = event.createResponseEvent(name: "TrackingIdentifierValue", type: EventType.analytics, source: EventSource.responseIdentity, data: sharedState)
+    ///   - data: the event which triggered the analytics identity request.
+    private func dispatchAnalyticsIdentityResponse(event: Event, data: [String: Any]) {
+        let responseIdentityEvent = event.createResponseEvent(name: "TrackingIdentifierValue", type: EventType.analytics, source: EventSource.responseIdentity, data: data)
         dispatch(event: responseIdentityEvent)
     }
 
@@ -435,73 +406,8 @@ public class Analytics: NSObject, Extension {
         dispatch(event: responseEvent)
     }
 
-    /// Builds an analytics identity `NetworkRequest`.
-    /// - Parameters:
-    ///   - url: the url of the analytics identity request.
-    /// - Returns: the built analytics identity `NetworkRequest`.
-    private func buildAnalyticsIdentityRequest(url: URL) -> NetworkRequest {
-        var headers = [String: String]()
-        let locale = ServiceProvider.shared.systemInfoService.getActiveLocaleName()
-        if !locale.isEmpty {
-            headers[AnalyticsConstants.HttpConnection.HEADER_KEY_ACCEPT_LANGUAGE] = locale
-        }
-
-        return NetworkRequest(url: url, httpMethod: .get, connectPayload: "", httpHeaders: headers, connectTimeout: AnalyticsConstants.Default.CONNECTION_TIMEOUT, readTimeout: AnalyticsConstants.Default.CONNECTION_TIMEOUT)
-    }
-
-    /// Parses the analytics id present in a response received from analytics.
-    /// - Parameters:
-    ///     - state: The current `AnalyticsState`.
-    ///     - response: The response received from analytics.
-    /// - Returns: a string containing the analytcs id contained in the response or a generated analytics id if non was found.
-    private func parseIdentifier(response: Data?) -> String {
-        guard let response = response else {
-            Log.debug(label: self.LOG_TAG, "parseIdentifier - Response is nil for analytics id request.")
-            return ""
-        }
-        guard let jsonResponse = try? JSONDecoder().decode(AnalyticsHitResponse.self, from: response) else {
-            Log.debug(label: self.LOG_TAG, "parseIdentifier - Failed to parse analytics server response.")
-            return ""
-        }
-        return jsonResponse.aid ?? ""
-    }
-
-    /// Generates a random Analytics ID.
-    /// This method should be used if the analytics server response will be null or invalid.
-    /// - Returns: a string containing a random analytics identifier.
-    private func generateAID() -> String {
-        let halfAidLength = AnalyticsConstants.AID_LENGTH / 2
-        let highBound = 7
-        let lowBound = 3
-        var uuid = UUID().uuidString
-
-        uuid = uuid.replacingOccurrences(of: "-", with: "", options: .literal, range: nil).uppercased()
-
-        guard let firstPattern = try? NSRegularExpression(pattern: "^[89A-F]") else { return "" }
-        guard let secondPattern = try? NSRegularExpression(pattern: "^[4-9A-F]") else { return "" }
-
-        var substring = uuid.prefix(halfAidLength)
-        var firstPartUuid = String(substring)
-        substring = uuid.suffix(halfAidLength)
-        var secondPartUuid = String(substring)
-
-        var matches = firstPattern.matches(in: firstPartUuid, range: NSRange(0..<firstPartUuid.count-1))
-        if matches.count != 0 {
-            let range = firstPartUuid.startIndex..<firstPartUuid.index(after: firstPartUuid.startIndex)
-            firstPartUuid = firstPartUuid.replacingCharacters(in: range, with: String(Int.random(in: 1 ..< highBound)))
-        }
-
-        matches = secondPattern.matches(in: secondPartUuid, range: NSRange(0..<secondPartUuid.count-1))
-        if matches.count != 0 {
-            let range = firstPartUuid.startIndex..<firstPartUuid.index(after: firstPartUuid.startIndex)
-            secondPartUuid = secondPartUuid.replacingCharacters(in: range, with: String(Int.random(in: 1 ..< lowBound)))
-        }
-
-        return firstPartUuid + "-" + secondPartUuid
-    }
-
-    ///Converts the lifecycle event in internal analytics action. If backdate session and offline tracking are enabled,
-    ///and previous session length is present in the contextData map, we send a separate hit with the previous session information and the rest of the keys as a Lifecycle action hit.
+    /// Converts the lifecycle event in internal analytics action. If backdate session and offline tracking are enabled,
+    /// and previous session length is present in the contextData map, we send a separate hit with the previous session information and the rest of the keys as a Lifecycle action hit.
     /// If ignored session is present, it will be sent as part of the Lifecycle hit and no SessionInfo hit will be sent.
     /// - Parameters:
     ///     - event: the `Lifecycle Event` to process.
@@ -645,7 +551,7 @@ public class Analytics: NSObject, Extension {
         }
 
         var analyticsData = analyticsState.defaultData
-        if let contextData = trackData[AnalyticsConstants.EventDataKeys.CONTEXT_DATA] as? [String: String] {
+        if let contextData = cleanContextData(trackData[AnalyticsConstants.EventDataKeys.CONTEXT_DATA] as? [String: Any?]) {
             analyticsData.merge(contextData) { _, newValue in
                 return newValue
             }
@@ -686,14 +592,14 @@ public class Analytics: NSObject, Extension {
             return analyticsVars
         }
 
-        if let actionName = trackData[AnalyticsConstants.EventDataKeys.TRACK_ACTION] as? String {
+        if let actionName = trackData[AnalyticsConstants.EventDataKeys.TRACK_ACTION] as? String, !actionName.isEmpty {
             analyticsVars[AnalyticsConstants.Request.IGNORE_PAGE_NAME_KEY] = AnalyticsConstants.IGNORE_PAGE_NAME_VALUE
             let isInternal = trackData[AnalyticsConstants.EventDataKeys.TRACK_INTERNAL] as? Bool ?? false
             let actionNameWithPrefix = "\(isInternal ? AnalyticsConstants.INTERNAL_ACTION_PREFIX : AnalyticsConstants.ACTION_PREFIX)\(actionName)"
             analyticsVars[AnalyticsConstants.Request.ACTION_NAME_KEY] = actionNameWithPrefix
         }
         analyticsVars[AnalyticsConstants.Request.PAGE_NAME_KEY] = analyticsState.applicationId
-        if let stateName = trackData[AnalyticsConstants.EventDataKeys.TRACK_STATE] as? String {
+        if let stateName = trackData[AnalyticsConstants.EventDataKeys.TRACK_STATE] as? String, !stateName.isEmpty {
             analyticsVars[AnalyticsConstants.Request.PAGE_NAME_KEY] = stateName
         }
 
@@ -718,9 +624,8 @@ public class Analytics: NSObject, Extension {
             }
         }
 
-        if let appState = AnalyticsHelper.getApplicationState() {
-            analyticsVars[AnalyticsConstants.Request.CUSTOMER_PERSPECTIVE_KEY] =
-                (appState == .background) ? AnalyticsConstants.APP_STATE_BACKGROUND : AnalyticsConstants.APP_STATE_FOREGROUND
+        if let appState = getApplicationStateVar() {
+            analyticsVars[AnalyticsConstants.Request.CUSTOMER_PERSPECTIVE_KEY] = appState
         }
 
         return analyticsVars
@@ -802,5 +707,33 @@ public class Analytics: NSObject, Extension {
             Log.warning(label: "Analytics", "WaitForAcquisitionData - Launch hit delay has expired without referrer data.")
             self?.analyticsDatabase?.cancelWaitForAdditionalData(type: .referrer)
         }
+    }
+
+    // Provide a function to override for App Extension support
+    fileprivate func getApplicationStateVar() -> String? {
+        return nil
+    }
+
+}
+
+extension AnalyticsBase {
+    /// Remove keys with value other than String, Character or a type convertable to NSNumber.
+    /// - Parameter data: Analytics context data from track event.
+    /// - Returns: Cleaned context data converted to [String: String] dictionary
+    func cleanContextData(_ data: [String: Any?]?) -> [String: String]? {
+        guard let data = data else {
+            return nil
+        }
+
+        let cleanedData = data.filter {
+            switch $0.value {
+            case is NSNumber, is String, is Character:
+                return true
+            default:
+                Log.warning(label: LOG_TAG, "cleanContextData - Dropping Key(\($0.key)) with Value(\(String(describing: $0.value))). Value should be String, Number, Bool or Character")
+                return false
+            }
+        }.mapValues { String(describing: $0!) }
+        return cleanedData
     }
 }

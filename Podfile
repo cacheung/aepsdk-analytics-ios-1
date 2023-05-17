@@ -4,29 +4,52 @@ use_frameworks!
 
 project 'AEPAnalytics.xcodeproj'
 
+pod 'SwiftLint', '0.44.0'
+
+def core_pods
+  pod 'AEPServices'
+  pod 'AEPCore'
+  pod 'AEPRulesEngine'
+end
+
+def test_pods
+  pod 'AEPServices'
+  pod 'AEPCore'
+  pod 'AEPLifecycle'
+  pod 'AEPIdentity'
+end
+
 target 'AEPAnalytics' do
-  pod 'AEPCore', :git => 'https://github.com/adobe/aepsdk-core-ios.git', :branch => 'main'
-  pod 'AEPServices', :git => 'https://github.com/adobe/aepsdk-core-ios.git', :branch => 'main'
-  pod 'AEPRulesEngine', :git => 'https://github.com/adobe/aepsdk-rulesengine-ios.git', :branch => 'main'
+  core_pods
 end
 
-target 'AEPAnalyticsUnitTests' do
-  pod 'AEPCore', :git => 'https://github.com/adobe/aepsdk-core-ios.git', :branch => 'main'
-  pod 'AEPServices', :git => 'https://github.com/adobe/aepsdk-core-ios.git', :branch => 'main'
-  pod 'AEPRulesEngine', :git => 'https://github.com/adobe/aepsdk-rulesengine-ios.git', :branch => 'main'
+target 'UnitTests' do
+  core_pods
 end
 
-target 'AEPAnalyticsFunctionalTests' do
-  pod 'AEPCore', :git => 'https://github.com/adobe/aepsdk-core-ios.git', :branch => 'main'
-  pod 'AEPServices', :git => 'https://github.com/adobe/aepsdk-core-ios.git', :branch => 'main'
-  pod 'AEPRulesEngine', :git => 'https://github.com/adobe/aepsdk-rulesengine-ios.git', :branch => 'main'
+target 'FunctionalTests' do
+  core_pods
 end
 
-target 'AnalyticsSampleApp' do
-  pod 'AEPCore', :git => 'https://github.com/adobe/aepsdk-core-ios.git', :branch => 'main'
-  pod 'AEPServices', :git => 'https://github.com/adobe/aepsdk-core-ios.git', :branch => 'main'
-  pod 'AEPIdentity', :git => 'https://github.com/adobe/aepsdk-core-ios.git', :branch => 'main'
-  pod 'AEPRulesEngine', :git => 'https://github.com/adobe/aepsdk-rulesengine-ios.git', :branch => 'main'
-  pod 'ACPCore', :git => 'https://github.com/adobe/aepsdk-compatibility-ios.git', :branch => 'main'
-  pod 'AEPAssurance'
+target 'TestAppiOS' do
+  test_pods
+  pod 'AEPAssurance', '~> 3.0.0'
+end
+
+target 'TestAppExt' do
+  test_pods
+end
+
+target 'TestApptvOS' do
+  test_pods
+end
+
+post_install do |pi|
+  pi.pods_project.targets.each do |t|
+    t.build_configurations.each do |bc|
+        bc.build_settings['TVOS_DEPLOYMENT_TARGET'] = '10.0'
+        bc.build_settings['SUPPORTED_PLATFORMS'] = 'iphoneos iphonesimulator appletvos appletvsimulator'
+        bc.build_settings['TARGETED_DEVICE_FAMILY'] = "1,2,3"
+    end
+  end
 end

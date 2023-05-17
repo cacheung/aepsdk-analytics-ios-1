@@ -15,278 +15,54 @@ import AEPServices
 @testable import AEPAnalytics
 @testable import AEPCore
 
-class AnalyticsTrackTests : AnalyticsFunctionalTestBase {
+@available(tvOSApplicationExtension, unavailable)
+class AnalyticsTrackTests : AnalyticsTrackTestBase {
 
-    override func setUp() {        
-        super.setupBase()
+    override func setUp() {
+        runningForApp = true
+        super.setupBase(forApp: true)
         dispatchDefaultConfigAndIdentityStates()
     }
 
     func testTrackState() {
-        let trackData: [String: Any] = [
-            CoreConstants.Keys.STATE : "testState",
-            CoreConstants.Keys.CONTEXT_DATA : [
-                "k1": "v1",
-                "k2": "v2"
-            ]
-        ]
-        let trackEvent = Event(name: "Generic track event", type: EventType.genericTrack, source: EventSource.requestContent, data: trackData)
-        mockRuntime.simulateComingEvent(event: trackEvent)
-
-        waitForProcessing()
-
-        let expectedVars = [
-            "ce": "UTF-8",
-            "cp": "foreground",
-            "pageName" : "testState",
-            "mid" : "mid",
-            "aamb" : "blob",
-            "aamlh" : "lochint",
-            "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
-        ]
-
-        let expectedContextData = [
-            "k1" : "v1",
-            "k2" : "v2",
-        ]
-
-        XCTAssertEqual(mockNetworkService?.calledNetworkRequests.count, 1)
-        verifyHit(request: mockNetworkService?.calledNetworkRequests[0],
-                  host: "https://test.com/b/ss/rsid/0/",
-                  vars: expectedVars,
-                  contextData: expectedContextData)
+        trackStateTester()
+    }
+    
+    func testTrackEmptyState() {
+        trackStateEmptyTester()
     }
 
     func testTrackAction() {
-        let trackData: [String: Any] = [
-            CoreConstants.Keys.ACTION : "testAction",
-            CoreConstants.Keys.CONTEXT_DATA : [
-                "k1": "v1",
-                "k2": "v2"
-            ]
-        ]
-        let trackEvent = Event(name: "Generic track event", type: EventType.genericTrack, source: EventSource.requestContent, data: trackData)
-        mockRuntime.simulateComingEvent(event: trackEvent)
-
-        waitForProcessing()
-
-        let expectedVars = [
-            "ce": "UTF-8",
-            "cp": "foreground",
-            "pev2" : "AMACTION:testAction",
-            "pe" : "lnk_o",
-            "mid" : "mid",
-            "aamb" : "blob",
-            "aamlh" : "lochint",
-            "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
-        ]
-        let expectedContextData = [
-            "k1" : "v1",
-            "k2" : "v2",
-            "a.action" : "testAction",
-        ]
-
-        XCTAssertEqual(mockNetworkService?.calledNetworkRequests.count, 1)
-        verifyHit(request: mockNetworkService?.calledNetworkRequests[0],
-                  host: "https://test.com/b/ss/rsid/0/",
-                  vars: expectedVars,
-                  contextData: expectedContextData)
+        trackActionTester()
     }
-
-
+    
+    func testTrackEmptyAction() {
+        trackActionEmptyTester()
+    }
+    
     func testTrackInternalAction() {
-        let trackData: [String: Any] = [
-            CoreConstants.Keys.ACTION : "testAction",
-            AnalyticsConstants.EventDataKeys.TRACK_INTERNAL : true,
-            CoreConstants.Keys.CONTEXT_DATA : [
-                "k1": "v1",
-                "k2": "v2"
-            ]
-        ]
-        let trackEvent = Event(name: "Generic track event", type: EventType.genericTrack, source: EventSource.requestContent, data: trackData)
-        mockRuntime.simulateComingEvent(event: trackEvent)
-
-        waitForProcessing()
-
-        let expectedVars = [
-            "ce": "UTF-8",
-            "cp": "foreground",
-            "pev2" : "ADBINTERNAL:testAction",
-            "pe" : "lnk_o",
-            "mid" : "mid",
-            "aamb" : "blob",
-            "aamlh" : "lochint",
-            "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
-        ]
-        let expectedContextData = [
-            "k1" : "v1",
-            "k2" : "v2",
-            "a.internalaction" : "testAction",
-        ]
-
-        XCTAssertEqual(mockNetworkService?.calledNetworkRequests.count, 1)
-        verifyHit(request: mockNetworkService?.calledNetworkRequests[0],
-                  host: "https://test.com/b/ss/rsid/0/",
-                  vars: expectedVars,
-                  contextData: expectedContextData)
+        trackInternalActionTester()
     }
 
     func testTrackOnlyContextData() {
-        let trackData: [String: Any] = [
-            CoreConstants.Keys.CONTEXT_DATA : [
-                "k1": "v1",
-                "k2": "v2"
-            ]
-        ]
-        let trackEvent = Event(name: "Generic track event", type: EventType.genericTrack, source: EventSource.requestContent, data: trackData)
-        mockRuntime.simulateComingEvent(event: trackEvent)
-
-        waitForProcessing()
-
-        let expectedVars = [
-            "ce": "UTF-8",
-            "cp": "foreground",
-            "mid" : "mid",
-            "aamb" : "blob",
-            "aamlh" : "lochint",
-            "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
-        ]
-        let expectedContextData = [
-            "k1" : "v1",
-            "k2" : "v2",
-        ]
-
-        XCTAssertEqual(mockNetworkService?.calledNetworkRequests.count, 1)
-        verifyHit(request: mockNetworkService?.calledNetworkRequests[0],
-                  host: "https://test.com/b/ss/rsid/0/",
-                  vars: expectedVars,
-                  contextData: expectedContextData)
+        trackOnlyContextDataTester()
     }
 
     func testTrackOverrideExistingContextData() {
-        let lifecycleData = [
-            AnalyticsConstants.Lifecycle.EventDataKeys.APP_ID : "originalAppID",
-            AnalyticsConstants.Lifecycle.EventDataKeys.DEVICE_NAME : "originalDeviceName",
-            AnalyticsConstants.Lifecycle.EventDataKeys.OPERATING_SYSTEM : "originalOS"
-        ]
-        simulateLifecycleState(data: lifecycleData)
-
-        let trackData: [String: Any] = [
-            CoreConstants.Keys.CONTEXT_DATA : [
-                "k1": "v1",
-                "k2": "v2",
-                "a.AppID" : "overwrittenApp",
-                "a.DeviceName" : "overwrittenDevice",
-                "a.OSVersion" : "overwrittenOS",
-            ]
-        ]
-
-        let trackEvent = Event(name: "Generic track event", type: EventType.genericTrack, source: EventSource.requestContent, data: trackData)
-        mockRuntime.simulateComingEvent(event: trackEvent)
-
-        waitForProcessing()
-
-        let expectedVars = [
-            "ce": "UTF-8",
-            "cp": "foreground",
-            "mid" : "mid",
-            "aamb" : "blob",
-            "aamlh" : "lochint",
-            "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
-        ]
-        let expectedContextData = [
-            "k1" : "v1",
-            "k2" : "v2",
-            "a.AppID" : "overwrittenApp",
-            "a.DeviceName" : "overwrittenDevice",
-            "a.OSVersion" : "overwrittenOS"
-        ]
-
-        XCTAssertEqual(mockNetworkService?.calledNetworkRequests.count, 1)
-        verifyHit(request: mockNetworkService?.calledNetworkRequests[0],
-                  host: "https://test.com/b/ss/rsid/0/",
-                  vars: expectedVars,
-                  contextData: expectedContextData)
+        trackOverrideExistingContextDataTester()
     }
 
     // TrackState and Action should populate linkTrackVars
     func testTrackStateAndAction() {
-        let trackData: [String: Any] = [
-            CoreConstants.Keys.ACTION : "testAction",
-            CoreConstants.Keys.STATE : "testState",
-            CoreConstants.Keys.CONTEXT_DATA : [
-                "k1": "v1",
-                "k2": "v2",
-            ]
-        ]
-
-        let trackEvent = Event(name: "Generic track event", type: EventType.genericTrack, source: EventSource.requestContent, data: trackData)
-        mockRuntime.simulateComingEvent(event: trackEvent)
-
-        waitForProcessing()
-
-        let expectedVars = [
-            "ce": "UTF-8",
-            "cp": "foreground",
-            "pageName" : "testState",
-            "pev2" : "AMACTION:testAction",
-            "pe" : "lnk_o",
-            "mid" : "mid",
-            "aamb" : "blob",
-            "aamlh" : "lochint",
-            "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
-        ]
-        let expectedContextData = [
-            "k1" : "v1",
-            "k2" : "v2",
-            "a.action" : "testAction",
-        ]
-
-        XCTAssertEqual(mockNetworkService?.calledNetworkRequests.count, 1)
-        verifyHit(request: mockNetworkService?.calledNetworkRequests[0],
-                  host: "https://test.com/b/ss/rsid/0/",
-                  vars: expectedVars,
-                  contextData: expectedContextData)
+        trackStateAndActionTester()
     }
 
     // Track special characters
     func testTrackSpecialCharacters() {
-        let trackData: [String: Any] = [
-            CoreConstants.Keys.ACTION : "网页",
-            CoreConstants.Keys.STATE : "~!@#$%^&*()_.-+",
-            CoreConstants.Keys.CONTEXT_DATA : [
-                "~!@#$%^&*()_.-+": "~!@#$%^&*()_.-+", // Characters other than _ are ignored
-                "网页": "网页", // This key is ignored
-                "k1" : "网页"
-            ]
-        ]
+        trackSpecialCharactersTester()
+    }
 
-        let trackEvent = Event(name: "Generic track event", type: EventType.genericTrack, source: EventSource.requestContent, data: trackData)
-        mockRuntime.simulateComingEvent(event: trackEvent)
-
-        waitForProcessing()
-
-        let expectedVars = [
-            "ce": "UTF-8",
-            "cp": "foreground",
-            "pageName" : "~!@#$%^&*()_.-+",
-            "pev2" : "AMACTION:网页",
-            "pe" : "lnk_o",
-            "mid" : "mid",
-            "aamb" : "blob",
-            "aamlh" : "lochint",
-            "ts" : String(trackEvent.timestamp.getUnixTimeInSeconds())
-        ]
-        let expectedContextData = [
-            "_": "~!@#$%^&*()_.-+",
-            "a.action" : "网页",
-            "k1" : "网页"
-        ]
-
-        XCTAssertEqual(mockNetworkService?.calledNetworkRequests.count, 1)
-        verifyHit(request: mockNetworkService?.calledNetworkRequests[0],
-                  host: "https://test.com/b/ss/rsid/0/",
-                  vars: expectedVars,
-                  contextData: expectedContextData)
-    }    
+    func testTrackContextDataWithNonStringValues() {
+        trackContextDataWithNonStringValuesTester()
+    }
 }

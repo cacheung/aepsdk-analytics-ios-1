@@ -15,7 +15,7 @@ import AEPServices
 import Foundation
 
 /// Defines the public interface for the Analytics extension
-@objc public extension Analytics {
+@objc public extension AnalyticsBase {
 
     /// Clears all hits from the tracking queue and removes them from the database.
     @objc(clearQueue)
@@ -42,7 +42,7 @@ import Foundation
                 completion(0, AEPError.unexpected)
                 return
             }
-            completion(queueSize, AEPError.none)
+            completion(queueSize, nil)
         }
     }
     /// Forces analytics to send all queued hits regardless of current batch options
@@ -65,11 +65,16 @@ import Foundation
                 return
             }
 
-            guard let trackingIdentifier = responseEvent.data?[AnalyticsConstants.EventDataKeys.ANALYTICS_ID] as? String else {
-                completion(nil, AEPError.unexpected)
+            if let responseData = responseEvent.data, responseData.keys.contains(AnalyticsConstants.EventDataKeys.ANALYTICS_ID) {
+                guard let trackingIdentifier = responseData[AnalyticsConstants.EventDataKeys.ANALYTICS_ID] as? String else {
+                    completion(nil, AEPError.unexpected)
+                    return
+                }
+                completion(trackingIdentifier, nil)
                 return
             }
-            completion(trackingIdentifier, AEPError.none)
+
+            completion(nil, nil)
         }
     }
     /// Retrieves the visitor tracking identifier.
@@ -85,11 +90,16 @@ import Foundation
                 return
             }
 
-            guard let visitorIdentifier = responseEvent.data?[AnalyticsConstants.EventDataKeys.VISITOR_IDENTIFIER] as? String else {
-                completion(nil, AEPError.unexpected)
+            if let responseData = responseEvent.data, responseData.keys.contains(AnalyticsConstants.EventDataKeys.VISITOR_IDENTIFIER) {
+                guard let visitorIdentifier = responseData[AnalyticsConstants.EventDataKeys.VISITOR_IDENTIFIER] as? String else {
+                    completion(nil, AEPError.unexpected)
+                    return
+                }
+                completion(visitorIdentifier, nil)
                 return
             }
-            completion(visitorIdentifier, AEPError.none)
+
+            completion(nil, nil)
         }
     }
     /// Sets the visitor tracking identifier.
